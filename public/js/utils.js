@@ -13,3 +13,4 @@ async function fetchRelayInfoDoc(relayUrl, protocol) {
         return null
     }
 }
+
