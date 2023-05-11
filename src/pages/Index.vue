@@ -19,8 +19,8 @@
               </div>
             </div>
             <div v-if="relay">
-              <q-badge v-if="relayState.connected" color="green">Connected</q-badge> 
-              <q-badge v-else>...</q-badge> 
+              <q-badge v-if="relayState.connected" color="green">Connected</q-badge>
+              <q-badge v-else>...</q-badge>
             </div>
             <div v-if="relayState.errorMessage" class="row q-mt-md">
               <div class="col-md-12">
@@ -48,7 +48,7 @@
       <div class="col-2"></div>
     </div>
 
-    <div  class="row q-mt-md">
+    <div class="row q-mt-md">
       <div class="col-2"></div>
       <div class="col-8">
         <q-card>
@@ -72,13 +72,71 @@ export default {
         errorMessage: null,
       },
       relayInfoDoc: null,
-      relay: null
+      relay: null,
+      testData: {
+        nip01: (alicePubkey, bobPubkey) => ({
+          tests: [
+            {
+
+              description: "Set user metadata (kind:0)",
+              actions: [
+                {
+                  type: 'publish',
+                  actor: 'alice',
+                  event: {
+                    kind: 0,
+                    pubkey: alicePubkey,
+                    content: "{\"name\":\"alicet\",\"display_name\":\"the ugly\",\"about\":\"meeeee\",\"website\":\"lnbits.com\",\"lud16\":\"nostr@lnbits.com\"}",
+                  }
+                },
+                {
+                  type: 'subscribe',
+                  actor: 'bob',
+                  id: 'alice-meta',
+                  filters: [{
+                    kinds: [0],
+                    authors: [alicePubkey]
+                  }],
+                  expect: {
+                    events: [{
+                      kind: 0,
+                      pubkey: alicePubkey,
+                      content: "{\"name\":\"alicet\",\"display_name\":\"the ugly\",\"about\":\"meeeee\",\"website\":\"lnbits.com\",\"lud16\":\"nostr@lnbits.com\"}",
+                    }]
+                  }
+                }
+              ]
+            }
+          ]
+
+        })
+      }
     }
   },
   methods: {
     startTest: async function () {
       console.log("### startTest", this.relayUrl)
-      await this.testNip01()
+      const alicePrivateKey = NostrTools.generatePrivateKey()
+      const bobPrivateKey = NostrTools.generatePrivateKey()
+
+      const context = {
+        alice: {
+          privateKey: alicePrivateKey,
+          publicKey: NostrTools.getPublicKey(alicePrivateKey),
+          relay: await this.connectToRelay(this.relayUrl)
+        },
+        bob: {
+          privateKey: bobPrivateKey,
+          publicKey: NostrTools.getPublicKey(bobPrivateKey),
+          relay: await this.connectToRelay(this.relayUrl)
+        }
+      }
+
+      console.log('### bind')
+      context.alice.relay.listEvents = listEvents.bind(context.alice.relay)
+      context.bob.relay.listEvents = listEvents.bind(context.bob.relay)
+
+      await this.testNip01(context)
     },
     checkWsUrl: async function () {
       try {
@@ -95,7 +153,7 @@ export default {
 
         this.relayState.errorMessage = null
         await this.fetchRelayInfoDoc()
-        await this.connectToRelay()
+        this.relay = await this.connectToRelay(this.relayUrl)
       } catch (error) {
         this.relayState.errorMessage = 'Invalid Websocket URL'
       }
@@ -107,22 +165,23 @@ export default {
         this.relayInfoDoc = await fetchRelayInfoDoc(this.relayUrl, 'http:')
       }
     },
-    connectToRelay: async function () {
+    connectToRelay: async function (relayUrl) {
       try {
-        this.relay = NostrTools.relayInit(this.relayUrl)
-        this.relay.on('connect', () => {
+        const relay = NostrTools.relayInit(relayUrl)
+        relay.on('connect', () => {
           console.log('connected to relay')
-          this.relayState.connected = true
+          // this.relayState.connected = true
         })
-        this.relay.on('error', () => {
-          this.relayState.errorMessage = "Failed to connect to relay"
-          this.relayState.connected = false
+        relay.on('error', () => {
+          // this.relayState.errorMessage = "Failed to connect to relay"
+          // this.relayState.connected = false
         })
-        console.log('### this.relay.', this.relay)
-        await this.relay.connect()
+        console.log('### relay.', relay)
+        await relay.connect()
+        return relay
       } catch (error) {
-        this.relay = null
         console.warn(error)
+        return null
       }
     },
     disconnectFromRelay: function () {
@@ -135,7 +194,31 @@ export default {
         console.warn(error)
       }
     },
-    testNip01: async function () {
+    testNip01: async function (op) {
+      const data = this.testData.nip01(op.alice.publicKey, op.bob.publicKey)
+      for (const t of data.tests) {
+        console.log('#### test', t.description)
+        for (const a of t.actions) {
+          const actor = op[a.actor]
+          switch (a.type) {
+            case 'publish':
+              const event = a.event // clone
+              event.created_at = event.created_at || Math.floor(Date.now() / 1000)
+              event.tags = event.tags || []
+              event.id = NostrTools.getEventHash(event)
+              event.sig = NostrTools.signEvent(event, actor.privateKey)
+              actor.relay.publish(event)
+              break
+            case 'subscribe':
+              const events = await actor.relay.listEvents(a.filters)
+              console.log('### events', events)
+              break
+
+            default:
+              break;
+          }
+        }
+      }
 
     }
   }
