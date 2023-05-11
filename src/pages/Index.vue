@@ -19,7 +19,7 @@
               </div>
             </div>
             <div v-if="relay">
-              <q-badge v-if="relay.status == 1" color="green">Connected</q-badge> 
+              <q-badge v-if="relayState.connected" color="green">Connected</q-badge> 
               <q-badge v-else>...</q-badge> 
             </div>
             <div v-if="relayState.errorMessage" class="row q-mt-md">
@@ -28,24 +28,12 @@
               </div>
             </div>
             <div v-else-if="relayInfoDoc" class="q-mt-md">
-              <span> Supported NIPS: </span>
+              <span class="q-mr-md"> Supported NIPs: </span>
               <q-badge v-for="nip in relayInfoDoc.supported_nips" :key="nip" class="q-mr-md"><span
                   v-text="nip"></span></q-badge>
             </div>
-
-
           </q-card-section>
-        </q-card>
-      </div>
-
-      <div class="col-2"></div>
-    </div>
-
-    <div v-if="relayInfoDoc" class="row q-mt-md">
-      <div class="col-2"></div>
-      <div class="col-8">
-        <q-card>
-          <q-card-section>
+          <q-card-section v-if="relayInfoDoc">
             <q-expansion-item group="extras" icon="crop_free" label="Relay Information Document (NIP-11)">
               <q-card>
                 <q-card-section>
@@ -54,6 +42,17 @@
               </q-card>
             </q-expansion-item>
           </q-card-section>
+        </q-card>
+      </div>
+
+      <div class="col-2"></div>
+    </div>
+
+    <div  class="row q-mt-md">
+      <div class="col-2"></div>
+      <div class="col-8">
+        <q-card>
+
 
         </q-card>
       </div>
@@ -112,10 +111,11 @@ export default {
       try {
         this.relay = NostrTools.relayInit(this.relayUrl)
         this.relay.on('connect', () => {
+          console.log('connected to relay')
           this.relayState.connected = true
         })
         this.relay.on('error', () => {
-          this.relayState.errorMessage = "Failed to connect"
+          this.relayState.errorMessage = "Failed to connect to relay"
           this.relayState.connected = false
         })
         console.log('### this.relay.', this.relay)
